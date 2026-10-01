@@ -27,6 +27,12 @@ async function refresh(force=false) {
     const stamp = data.quote ? new Date(data.quote.updatedAt).toLocaleString() : '';
     $('feed').textContent = data.fresh ? 'Updated '+stamp : (data.feedError || 'Waiting for a fresh quote…');
     $('email').textContent = data.emailReady ? data.email : 'Email needs setup on the server.';
+    if(data.monitor?.mode === 'cloud') {
+      $('interval').textContent = 'Cloud checks about every minute.';
+      $('monitor-help').textContent = 'One email per target. Save again to rearm. Cloud monitoring continues with your phone and computer switched off.';
+      const age = Date.now() - data.monitor.lastCheckAt;
+      if(age > 180000) $('feed').textContent = 'Cloud checks not confirmed recently. Check your Cron Trigger.';
+    }
     $('save').disabled = !data.fresh || !data.emailReady;
     $('test').disabled = !data.emailReady;
     data.levels.forEach((level,index) => {
@@ -55,6 +61,6 @@ async function action(path, body, success) {
 $('login-form').addEventListener('submit',async e => {e.preventDefault(); await action('/api/login',{password:$('password').value},''); $('password').value='';});
 $('targets').addEventListener('submit',e => {e.preventDefault(); action('/api/arm',{prices:[$('p1').value,$('p2').value]},'Both targets saved. One email per target.');});
 $('pause').addEventListener('click',()=>action('/api/pause',{},'Alerts paused. Pending emails cancelled.'));
-$('test').addEventListener('click',()=>action('/api/test-email',{},'Test email accepted by your mail server. Check your inbox and spam folder.'));
+$('test').addEventListener('click',()=>action('/api/test-email',{},'Test email accepted. Check your inbox and spam folder.'));
 ['p1','p2'].forEach(id=>$(id).addEventListener('input',()=>{dirty=true; directions();}));
 refresh(); setInterval(refresh,10000); document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});

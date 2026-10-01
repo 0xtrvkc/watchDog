@@ -1,0 +1,5 @@
+# Local cloud development only. Never commit real secrets.
+APP_PASSWORD=replace-with-a-long-random-password
+MAIL_TO=your-address@gmail.com
+EMAIL_WEBHOOK_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
+EMAIL_WEBHOOK_SECRET=replace-with-a-different-random-secret-at-least-32-characters

@@ -1,274 +1,238 @@
 # WatchDog
 
-**Set two gold prices. Get an email when each target is reached.**
+**Two gold prices. Email alerts. Your computer can be off.**
 
-WatchDog is a small, self-hosted gold price alert app with a mobile-friendly HTML interface and a Python backend. Run your own copy, connect your own email account, and choose your own two targets.
+WatchDog is a private gold alert app with a mobile-friendly HTML page. The cloud version runs on **Cloudflare Workers**, stores targets in **Cloudflare D1**, and checks prices with a **Cron Trigger every minute**. A small **Google Apps Script relay** sends email through your Google account.
 
-- Exactly two price targets, monitored independently.
-- One email per target, then that target disarms.
-- Monitoring continues when the browser is closed, while your server stays running.
-- Saved targets and pending email retries survive a restart.
-- No Python packages, npm dependencies, or paid data API key required.
+Each person deploys their own copy with their own account, two targets, and one recipient. This repository is source code, not a shared hosted alert service.
 
-Each installation is for **one private user** with one configured recipient. This repository is the source code, not a shared hosted alert service. Your alerts and credentials stay with your installation.
+## How it works
 
-## Before you start
+1. Open your deployed WatchDog URL on your phone or computer.
+2. Sign in with your app password.
+3. Enter exactly two prices and click **Save & arm both alerts**.
+4. Cloudflare checks the gold price about every minute.
+5. When a target is reached or crossed, the Gmail relay sends one email and that target disarms.
 
-You need:
+Once deployed and configured, monitoring continues with the page closed and your phone or PC switched off. Save again to rearm both targets; Pause cancels armed targets and pending emails. You can put both targets on the same side of the current price.
 
-- [Python 3.12 or newer](https://www.python.org/downloads/), or Docker with Docker Compose.
-- A computer/server that can stay awake and connected to the internet.
-- An email account that permits SMTP sending. Gmail is one option; other SMTP providers can work too.
+**This is near-real-time polling, not a tick stream.** A brief touch and reversal between checks can be missed. Feed latency, scheduler delays and email delivery add delay. The feed is gold in USD per troy ounce and may differ from your broker's XAUUSD bid/ask.
 
-The app itself has no subscription fee. Your email provider and hosting may have their own limits or charges. Running on a computer you already own does not require a cloud hosting subscription.
+## What you need
 
-### Price freshness
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) with Workers and D1 access.
+- A Google account permitted to deploy an Apps Script web app and send mail.
+- [Node.js 22.13+](https://nodejs.org/) (Node.js 24 recommended) for the one-time deployment from your computer.
 
-WatchDog reads **gold in USD per troy ounce** from [Gold API](https://gold-api.com). It checks about every **30 seconds**, or longer if the provider requests caching or encounters errors. All browser tabs share the backend's price request.
+There is no required paid data API key, Firebase billing upgrade, email sender domain, or Gmail App Password for this cloud setup. Workers/D1 have free allowances, and Google Apps Script has sending/runtime quotas. Small personal use is intended to fit those allowances; availability and quotas can change. Do not enable a paid plan or evade limits to make this run. Other activity in your accounts also uses their quotas.
 
-This is **near-real-time polling**. A brief touch and reversal between checks can be missed. Feed latency and email delivery add delay, and prices may differ from your broker's XAUUSD bid/ask. It is not a tick-by-tick feed or an order execution tool.
+The Gmail relay sends via Google's MailApp after you grant it permission. It does not read your inbox. Managed Google accounts may restrict anonymous web apps or mail access; use an account where those features are permitted.
 
-## Quick start
+## Deploy your own cloud version
 
-### 1. Get your own copy
+You need your computer only for setup and later code deployments. It does not need to stay on afterward.
 
-Clone this repository:
+### 1. Get the code
 
 ```sh
 git clone https://github.com/0xtrvkc/watchDog.git
 cd watchDog
+npm ci
 ```
 
-Alternatively, select **Code → Download ZIP** on GitHub and extract it. Open a terminal in the extracted folder containing `server.py`.
+Or download **Code → Download ZIP**, extract it, and open a terminal in the folder containing `package.json`. On Windows, type `powershell` into the File Explorer address bar to open a terminal there.
 
-To maintain your own version on GitHub, **fork this repository** and clone your fork instead. Each person runs their own backend with their own settings.
+Fork the repository if you want to maintain your own version. Clone your fork instead of the URL above. Do not put real passwords, relay secrets or private data in the repository.
 
-### 2. Create your configuration
+### 2. Set up Gmail delivery
 
-Copy `.env.example` to a file named **`.env`** in the same folder as `server.py`.
+1. Open [Google Apps Script](https://script.google.com/) and create a **New project**, named `WatchDog mail relay`.
+2. Replace the editor's starter code with the complete contents of [`cloud/gmail-relay.gs`](cloud/gmail-relay.gs). Save it.
+3. Open **Project Settings → Script properties** and add:
 
-**Windows PowerShell:**
+   | Property | Your value |
+   |---|---|
+   | `RELAY_SECRET` | A unique random secret of at least **32 characters**. Keep it private; you will reuse the same value in Cloudflare. |
+   | `MAIL_TO` | Your alert recipient address, for example `your-address@gmail.com`. |
 
-```powershell
-Copy-Item .env.example .env
-```
+4. In the editor, select **`authorizeMail`** from the function dropdown and click **Run**. Review and grant your own script the requested send-email permission. This step does not send an email.
+5. Click **Deploy → New deployment → Web app**.
+6. Set **Execute as: Me** and **Who has access: Anyone**, then deploy. The Worker needs access without an interactive Google sign-in; the secret in the request protects sending.
+7. Copy the web app URL ending in **`/exec`**. Do not use the `/dev` testing URL.
 
-**macOS / Linux:**
+The relay accepts email only for the configured `MAIL_TO`, verifies `RELAY_SECRET`, and remembers recently sent alert IDs to suppress retries. Do not publish the secret or make this an open mail relay. If your account does not permit the “Anyone” deployment, this relay cannot be used under that account's policy.
+
+### 3. Create the Cloudflare database
+
+From the WatchDog folder:
 
 ```sh
-cp .env.example .env
+npx wrangler login
+npx wrangler d1 create watchdog
 ```
 
-You can also copy and rename the file using your file manager. Make sure it is `.env`, not `.env.txt`.
+Login opens Cloudflare in your browser. After database creation, copy the returned **`database_id`**.
 
-Open `.env` in a text editor. For Gmail, your settings should look like this:
+Open [`wrangler.jsonc`](wrangler.jsonc) in a text editor and replace:
 
-```dotenv
-APP_PASSWORD=replace-this-with-your-own-random-password
-HOST=127.0.0.1
-PORT=8080
-PUBLIC_ORIGIN=http://localhost:8080
-
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_USER=your-address@gmail.com
-SMTP_PASSWORD=your-generated-app-password
-MAIL_FROM=your-address@gmail.com
-MAIL_TO=your-address@gmail.com
+```json
+"database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 ```
 
-Replace all password and email placeholders with **your own values**. You can use the same email address for the sender and recipient. `MAIL_TO` can also be a different address you control.
+with your actual database ID. Keep `binding` as **`DB`**, `database_name` as **`watchdog`**, and `migrations_dir` as **`migrations`**. Keep the rest of the configuration.
 
-There are two different passwords:
+If `watchdog` is already the name of a database in your account, use another name for creation and set that same name in `wrangler.jsonc`. The `DB` binding must stay unchanged.
 
-| Setting | Purpose |
+Initialise the remote database:
+
+```sh
+npm run db:remote
+```
+
+Confirm the migration when prompted. It creates the single state record used for your two alerts.
+
+### 4. Deploy the app and configure its secrets
+
+```sh
+npm run deploy
+```
+
+Wrangler prints your HTTPS address, typically:
+
+```text
+https://watchdog-gold-alerts.YOUR-SUBDOMAIN.workers.dev
+```
+
+The page can load now, but signing in and sending email require the following secrets. Run each command and enter its value at the prompt:
+
+```sh
+npx wrangler secret put APP_PASSWORD
+npx wrangler secret put MAIL_TO
+npx wrangler secret put EMAIL_WEBHOOK_URL
+npx wrangler secret put EMAIL_WEBHOOK_SECRET
+```
+
+| Cloudflare secret | Value to enter |
 |---|---|
-| `APP_PASSWORD` | Sign in to your WatchDog page. Choose a unique random password of at least 16 characters. |
-| `SMTP_PASSWORD` | Let the backend send email through your provider. For Gmail, use a generated Google App Password. |
+| `APP_PASSWORD` | Your own random app login password, at least 16 characters. Use a different value from the relay secret. |
+| `MAIL_TO` | The **same recipient address** you set in Google Script Properties. |
+| `EMAIL_WEBHOOK_URL` | The deployed Google web app URL ending in `/exec`. |
+| `EMAIL_WEBHOOK_SECRET` | The **same secret** you set as `RELAY_SECRET` in Google Script Properties. |
 
-For Gmail:
+Secrets remain on the backend. The public HTML page does not receive your app password or relay secret. You can also manage these values in your Worker's Cloudflare **Settings → Variables and Secrets**.
 
-1. Enable **2-Step Verification** on your Google account.
-2. Open [Google App Passwords](https://myaccount.google.com/apppasswords).
-3. Generate an App Password for WatchDog.
-4. Put it in `SMTP_PASSWORD`, removing formatting spaces.
+### 5. Verify the schedule and email
 
-Use the generated App Password, **not your normal Google password**. Google may not offer App Passwords for some account/security settings or managed accounts; see [Google's instructions](https://support.google.com/accounts/answer/185833). If unavailable, use another SMTP provider that supports this authentication method.
+1. Open your deployed HTTPS app URL on your phone or computer.
+2. Sign in with `APP_PASSWORD`.
+3. Click **Test email** and check inbox/spam.
+4. In Cloudflare, open the Worker and confirm its **Cron Trigger** is `* * * * *` (every minute).
+5. Wait for a fresh quote. New/changed Cron Triggers can take time to propagate; Cloudflare documents up to 15 minutes.
+6. Enter your two prices and click **Save & arm both alerts**.
 
-Keep `.env` private. It is excluded by `.gitignore` and `.dockerignore`. Do not post it in GitHub issues or upload it to your repository.
+Now your PC can be switched off. Do not delete the Worker, its Cron Trigger, the D1 database or the Google relay deployment while you want monitoring to continue.
 
-### 3. Start the backend
+## Target behaviour
 
-**Windows:**
-
-```powershell
-py server.py
-```
-
-**macOS / Linux:**
-
-```sh
-python3 server.py
-```
-
-`python server.py` also works if that command points to Python 3.12 or newer. No dependency installation is needed.
-
-Leave the terminal running. Open **http://localhost:8080** in your browser and sign in with your `APP_PASSWORD`.
-
-### 4. Test email and set your targets
-
-1. Click **Test email**.
-2. Check your inbox and spam folder for the test message.
-3. Enter two different gold prices.
-4. Click **Save & arm both alerts**.
-
-The backend automatically determines which direction each target needs:
-
-| Target relative to the price when you save | Trigger |
+| Target relative to the quote when you save | Trigger |
 |---|---|
-| Above the current price | First fresh quote at or above the target |
-| Below the current price | First fresh quote at or below the target |
+| Above current price | First fresh observed quote at or above the target |
+| Below current price | First fresh observed quote at or below the target |
 
-For example, if the current quote is **$4,150**, targets of **$4,200** and **$4,100** watch for an upward move and a downward move respectively. Both targets can also be above or below the current price.
+Two different targets are required. A target exactly equal to the current quote is rejected. A jump over a target can trigger; exact numerical equality is not required.
 
-Each target sends once. To set new targets or rearm the old ones, click **Save & arm both alerts** again. Both targets are rearmed using the current quote as their new baseline. **Pause alerts** cancels armed targets and queued emails.
+Each target sends once, then disarms. Saving reinitialises **both** targets using the latest quote as their baseline. An email pending delivery must be cancelled with Pause before replacing targets.
 
-Close the browser whenever you want; monitoring continues. Closing the backend, turning off the computer, or letting it sleep stops monitoring.
+## Reliability and limits
 
-## Access from your phone
-
-### On your home Wi-Fi
-
-1. Find the computer's local IP address, for example `192.168.1.50`.
-2. Update `.env`:
-
-   ```dotenv
-   HOST=0.0.0.0
-   PUBLIC_ORIGIN=http://192.168.1.50:8080
-   ```
-
-3. Restart the backend.
-4. Connect your phone to the same trusted Wi-Fi.
-5. Open **http://192.168.1.50:8080** and sign in.
-
-Use your actual computer IP. Allow inbound port 8080 through the computer's firewall on the **private network only** if necessary. This local HTTP connection is not encrypted; use it only on a network you trust.
-
-`PUBLIC_ORIGIN` must match the address you open, including the scheme and port. After changing it to your LAN address, use that address on your computer too.
-
-### Away from home
-
-Run the backend on an always-on machine behind an **HTTPS reverse proxy or an authenticated private tunnel**. Set `PUBLIC_ORIGIN` to the exact HTTPS address and keep port 8080 protected from direct public access.
-
-The installation is intended for personal use, not as a public multi-user service. Confirm that your host permits background processes, persistent storage, and outbound SMTP. A sleeping free host will not reliably monitor prices.
-
-**GitHub stores the code; it does not activate alerts.** GitHub Pages cannot run this Python backend. This repository includes no GitHub Actions monitoring workflow. Use your own computer or a suitable separate host for monitoring.
-
-## Docker
-
-Configure `.env` first, keeping `PORT=8080`. Then run:
-
-```sh
-docker compose up -d --build
-```
-
-Open **http://localhost:8080**. The Compose setup binds the published port to localhost and overrides `HOST` inside the container so the app is reachable through that port. To access it remotely, put your HTTPS proxy or private tunnel on the same host and configure `PUBLIC_ORIGIN` accordingly.
-
-Useful commands:
-
-```sh
-# View backend output
-docker compose logs -f
-
-# Restart after editing .env
-docker compose up -d --force-recreate
-
-# Stop monitoring, keeping saved state
-docker compose down
-```
-
-The `gold-state` named volume preserves targets and pending alerts. Do not delete the volume unless you intend to reset the saved state. Run only one instance per state file/volume.
-
-## Configuration reference
-
-| Variable | Description |
-|---|---|
-| `APP_PASSWORD` | Unique app login password, at least 16 characters. Replace the example value. |
-| `HOST` | Listening address. Default: `127.0.0.1`. Use `0.0.0.0` only when needed for trusted network access or a protected deployment. |
-| `PORT` | HTTP port. Default: `8080`. Keep `8080` with the provided Compose file. |
-| `PUBLIC_ORIGIN` | Exact address used to open the app, such as `http://localhost:8080` or `https://alerts.example.com`. |
-| `SMTP_HOST` | Your email provider's SMTP hostname. |
-| `SMTP_PORT` | `465` for implicit TLS, or your provider's STARTTLS port, usually `587`. |
-| `SMTP_USER` | SMTP login email address. |
-| `SMTP_PASSWORD` | Provider-approved SMTP password or App Password. |
-| `MAIL_FROM` | Single sender address permitted by your SMTP provider. |
-| `MAIL_TO` | Single recipient address for your alerts. |
-| `DATA_FILE` | Optional saved-state location. Default: `data/state.json` beside `server.py`; Docker uses `/data/state.json`. |
-
-For a different email provider, follow its SMTP host, port, authentication, and sender requirements. This app supports password-based SMTP authentication with TLS; it does not implement OAuth login.
-
-Restart the backend after changing `.env`. Environment variables already supplied by your host take precedence over values in `.env`.
+- Cloudflare runs the checks, not GitHub Actions or your browser. The schedule is every minute, but execution and external services are not guaranteed to be instantaneous.
+- One shared provider request is made per scheduled check when due. Opening more tabs does not increase provider requests.
+- The monitor honours the provider's 30-second minimum caching guidance, longer cache headers, `Retry-After`, and error backoff. Outages can increase the interval to 15 minutes or longer when the provider requests it.
+- Quotes more than 120 seconds old, more than 10 seconds in the future, or out of order do not trigger alerts.
+- Targets, triggered events, pending messages and accepted-email status persist in D1. The cloud version does not import the local Python `data/state.json`; set your two prices again after switching.
+- A database lease prevents overlapping scheduled runs. Optimistic version checks prevent concurrent page/scheduler updates from overwriting each other.
+- Failed messages retry with increasing delays, up to 10 attempts and within six hours. The original message/recipient is preserved for retries.
+- The Gmail relay suppresses known duplicate IDs, keeping up to 200 IDs for seven days. Google MailApp sending and the retry ledger are not one atomic transaction: a rare crash after sending but before recording can still cause a duplicate. Inbox placement is not guaranteed.
+- Pause cancels queued events. A request already in flight may still deliver afterward.
+- Sessions expire after a day; changing `APP_PASSWORD` invalidates existing sessions. Monitoring does not require an active browser login.
+- Login attempts and email tests are rate-limited across instances. Protect your passwords and use this as a private single-user app.
+- Google account quotas apply to all relevant activity in that account. Failed quota/permission checks appear as pending or failed email status; the app does not bypass them.
 
 ## Troubleshooting
 
-| What you see | What to check |
+| Symptom | Check |
 |---|---|
-| Python command not found | Install Python 3.12+, then try `py` on Windows or `python3` on macOS/Linux. |
-| App password setup error on startup | Replace the default `APP_PASSWORD` with your own password of at least 16 characters. |
-| Cannot open the page | Check that the backend is running, the address/port is correct, and the firewall allows access where needed. |
-| “Open the app at its configured address” | Open the exact address in `PUBLIC_ORIGIN`, or update that setting and restart. |
-| Save button disabled | Wait for a fresh quote and check that all SMTP/email variables are filled in. |
-| Email test failed | Check SMTP credentials, provider App Password requirements, TLS port, and whether the host blocks outbound SMTP. |
-| Test accepted but no email in inbox | Check spam/junk, sender restrictions, and provider delivery logs. SMTP acceptance does not guarantee inbox placement. |
-| No fresh quote / market closed | The provider is unavailable or its quote is stale. Monitoring backs off and resumes when fresh data returns. |
-| Email pending | Sending failed and a retry is queued. Check SMTP settings; Pause cancels queued messages. |
-| Email failed after 10 attempts | Fix the email configuration, restart if changed, test email, then save the targets again to rearm. |
-| Google App Password stopped working | Google can revoke App Passwords after an account password change. Generate a new one if needed. |
+| App says configure password | Set `APP_PASSWORD` as a Worker secret; use at least 16 characters and replace all example values. |
+| Cloud setup error | Check the D1 `database_id`, the `DB` binding and whether `npm run db:remote` succeeded. |
+| Waiting for a quote | Confirm the Cron Trigger and allow initial propagation time; check the source's freshness. |
+| Cloud checks not confirmed recently | Check Worker scheduled execution logs, quotas, database access and the Cron Trigger. |
+| Email not configured | Set `MAIL_TO`, `EMAIL_WEBHOOK_URL` and a 32+ character `EMAIL_WEBHOOK_SECRET`. |
+| Relay secret/recipient does not match | Match both values exactly between Google Script Properties and Cloudflare secrets. |
+| Relay does not return JSON | Use `/exec`, Execute as Me, and Anyone access. Recheck whether your Google account permits this deployment. |
+| Relay failed | Re-run `authorizeMail` to check permission, inspect Apps Script Executions, and check Google's remaining mail quota. |
+| Test accepted but inbox empty | Check spam/junk and sender/account restrictions. Acceptance is not a guarantee of inbox placement. |
+| Email failed | Fix the relay, verify Test email, then save targets again to rearm. |
+| Newly edited relay code not active | In Apps Script, edit the deployment, select a **new version**, and deploy. Merely saving editor code does not update `/exec`. |
 
-## How monitoring behaves
+Do not paste secrets into public issues. When reporting a problem, share the error and whether it came from WatchDog, Cloudflare or Apps Script; remove passwords, cookies, relay URLs and personal addresses from screenshots/logs.
 
-- A fresh observed quote at or beyond a target triggers it, including a jump over the exact target price. Setting a target exactly equal to the current quote is rejected.
-- Quotes older than 120 seconds, more than 10 seconds in the future, or out of order do not trigger. Keep the server clock synchronised.
-- On restart, armed targets are evaluated against fresh quotes. A temporary crossing while the backend was offline cannot be recovered if the price has already reversed.
-- Targets, queued emails, and accepted-email status persist in the state file. Back it up privately if needed. WatchDog does not store a full price history.
-- Failed email sends retry with increasing delays, up to 10 attempts. Polling/backoff and time spent sending can make checks take longer than 30 seconds.
-- SMTP cannot guarantee exactly-once delivery: an ambiguous timeout or crash after acceptance but before saving can cause a duplicate retry. Alert emails have a stable Message-ID.
-- An email already being sent can finish before Pause returns.
-- Login sessions expire after a day and are invalidated on backend restart. Monitoring does not depend on an active login session.
+## Updating and local development
 
-## Data source and permitted use
-
-The app uses the documented [Gold API price endpoint](https://gold-api.com/docs). Its [integration guidance](https://gold-api.com/llms.txt) asks clients to cache for 30 seconds. WatchDog respects that minimum, longer cache headers, `Retry-After`, and error backoff. It does not scrape chart sites or bypass access controls.
-
-The provider's [published terms](https://gold-api.com/terms) permit app/commercial use and prohibit API abuse. These references were reviewed on **2026-10-01**; terms and availability may change. The provider's data terms are separate from the code licence. This project does not certify the provider's upstream data licensing.
-
-## Development
-
-Run the tests from the repository folder:
+After pulling source updates:
 
 ```sh
-python -m unittest discover -s tests -v
+npm ci
+npm test
+npm run check
+npm run db:remote
+npm run deploy
 ```
 
-Use `py` or `python3` instead if appropriate for your system. Tests mock email sending and never send real messages. They cover target crossings, one-shot behaviour, restart and retry persistence, pause, stale/replayed quotes, invalid inputs, provider caching, and API authentication/origin checks.
+Migrations preserve existing state unless an individual migration explicitly changes it. Updating Worker code does not update your separate Google relay: follow the new-version deployment step above if `gmail-relay.gs` changed. Keep your existing D1 ID and Worker secrets.
+
+For cloud development on your computer:
+
+```sh
+npm run db:local
+```
+
+Copy `.dev.vars.example` to **`.dev.vars`**, enter your own development secrets, then:
+
+```sh
+npm run dev
+```
+
+The console prints a local app address. A local scheduled invocation can be triggered manually at `http://localhost:8787/__scheduled` (use the port printed by Wrangler). **Local mode does not run unattended cloud Cron Triggers**, and Test email/a scheduled crossing can send real mail if you supplied a real relay. Local D1 state is separate from the remote database.
+
+Automated tests use a SQLite-backed D1 adapter and mocked email/provider responses; they do not send real emails:
+
+```sh
+npm test
+```
+
+The original Python/SMTP version remains available for people who prefer an always-on computer or server. See [local Python setup](docs/LOCAL_SETUP.md). Its `.env` and SMTP settings are separate from the cloud secrets; do not run both monitors for the same targets unless you want alerts from both.
+
+## Project files
 
 | File | Purpose |
 |---|---|
-| `public/index.html`, `public/style.css`, `public/app.js` | Browser interface |
-| `server.py` | Private API, price monitoring, saved state, and SMTP delivery |
-| `.env.example` | Configuration template without real credentials |
-| `tests/test_alerts.py` | Behaviour and API checks |
-| `Dockerfile`, `compose.yaml` | Optional container setup |
+| `cloud/worker.js` | Private cloud API, authentication, scheduled monitoring and Gmail relay calls |
+| `cloud/gmail-relay.gs` | Google Apps Script email relay |
+| `migrations/0001_state.sql` | D1 saved-state schema |
+| `wrangler.jsonc` | Worker, D1, static assets and one-minute Cron Trigger configuration |
+| `public/` | Phone-friendly two-target HTML interface |
+| `cloud/worker.test.js` | Cloud behaviour/API/relay tests |
+| `server.py`, `tests/test_alerts.py` | Optional local Python backend and tests |
+| `docs/LOCAL_SETUP.md` | Local Python/Docker instructions |
 
-When reporting a problem, include your Python version, operating system, and the error message. Remove passwords, cookies, and personal email addresses before sharing logs or screenshots.
+## Sources and licence
 
-## References and licence
+- [Gold API documentation](https://gold-api.com/docs), [cache guidance](https://gold-api.com/llms.txt), and [terms](https://gold-api.com/terms).
+- [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), and [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/).
+- [Google Apps Script web apps](https://developers.google.com/apps-script/guides/web), [MailApp](https://developers.google.com/apps-script/reference/mail/mail-app), and [quotas](https://developers.google.com/apps-script/guides/services/quotas).
 
-These projects informed the initial review:
+The provider's published terms permit app use and prohibit abuse. References were reviewed on **2026-10-01**; terms, free allowances and service availability can change. This project does not certify the provider's upstream data licensing.
 
-- [xdec/gold-price-api](https://github.com/xdec/gold-price-api): Python API polling and CSV storage.
-- [lizhuoxi/XAUUSD-Price-Realtime](https://github.com/lizhuoxi/XAUUSD-Price-Realtime): An older quote/email monitoring example.
-- [KlodCripta/xauwatch](https://github.com/KlodCripta/xauwatch): A terminal gold price monitor.
+[xdec/gold-price-api](https://github.com/xdec/gold-price-api), [lizhuoxi/XAUUSD-Price-Realtime](https://github.com/lizhuoxi/XAUUSD-Price-Realtime), and [KlodCripta/xauwatch](https://github.com/KlodCripta/xauwatch) informed the initial review; no code was copied from them.
 
-No code was copied from those repositories. WatchDog is an independent implementation.
-
-WatchDog's source is available under the [MIT License](LICENSE). You can use, modify, and run your own copy under that licence; data and email services retain their own terms.
+WatchDog is available under the [MIT License](LICENSE). Data, hosting and email services retain their own terms.

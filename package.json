@@ -1,0 +1,16 @@
+{
+  "name": "watchdog-gold-alerts",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run",
+    "test": "node --test cloud/*.test.js",
+    "db:local": "wrangler d1 migrations apply watchdog --local",
+    "db:remote": "wrangler d1 migrations apply watchdog --remote"
+  },
+  "devDependencies": { "wrangler": "4.145.0" }
+}
