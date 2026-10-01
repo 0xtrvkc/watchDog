@@ -1,86 +1,274 @@
-# WatchDog · Two gold alerts
+# WatchDog
 
-A small private HTML app: enter **exactly two gold prices**, receive one email when each target is reached or crossed. No subscriptions are required by this code. A Python backend monitors while the page is closed; the computer/server must stay awake and online.
+**Set two gold prices. Get an email when each target is reached.**
 
-## What “real time” means here
+WatchDog is a small, self-hosted gold price alert app with a mobile-friendly HTML interface and a Python backend. Run your own copy, connect your own email account, and choose your own two targets.
 
-This uses the documented `https://api.gold-api.com/price/XAU` endpoint, returning gold in USD per troy ounce. The provider markets it as real-time data, but its integration docs ask clients to **cache for 30 seconds**. This app makes one shared request about every 30 seconds, honours longer `Cache-Control` values and `Retry-After`, and backs off on errors. Opening more browser tabs does not increase upstream requests.
+- Exactly two price targets, monitored independently.
+- One email per target, then that target disarms.
+- Monitoring continues when the browser is closed, while your server stays running.
+- Saved targets and pending email retries survive a restart.
+- No Python packages, npm dependencies, or paid data API key required.
 
-**This is near-real-time polling, not a tick stream.** A price can touch your target and reverse between samples without triggering an alert. Feed latency and email delivery add delay. This feed may differ from your broker's bid/ask XAUUSD. For exact broker-level touch detection, replace the feed with that broker's officially authorised stream; access, entitlements and cost depend on the broker. No guarantee of zero missed touches or instantaneous inbox delivery is possible with this version.
+Each installation is for **one private user** with one configured recipient. This repository is the source code, not a shared hosted alert service. Your alerts and credentials stay with your installation.
 
-The provider's published terms permit app/commercial use and prohibit abusive requests. We follow the documented caching interval, do not scrape chart sites, impersonate browsers, bypass access controls, or use private endpoints. Terms can change; links below were reviewed on 2026-10-01. These checks do not establish the provider's upstream licensing or amount to a guarantee about every applicable law.
+## Before you start
 
-## Start on your computer (free)
+You need:
 
-1. Install **Python 3.12 or newer** from https://www.python.org/downloads/.
-2. Copy `.env.example` to `.env` in this folder.
-3. Set a random `APP_PASSWORD` (at least 16 characters).
-4. Fill in `SMTP_USER`, `MAIL_FROM` and `MAIL_TO` with your email address. For Gmail, turn on 2-Step Verification and create an **App Password** at https://myaccount.google.com/apppasswords. Put that generated password in `SMTP_PASSWORD`. Do not use or share your normal Google password. App Password availability depends on your account's security settings/policy. Other SMTP providers can be used instead.
-5. Open a terminal in this folder and run:
+- [Python 3.12 or newer](https://www.python.org/downloads/), or Docker with Docker Compose.
+- A computer/server that can stay awake and connected to the internet.
+- An email account that permits SMTP sending. Gmail is one option; other SMTP providers can work too.
 
-   ```sh
-   python server.py
-   ```
+The app itself has no subscription fee. Your email provider and hosting may have their own limits or charges. Running on a computer you already own does not require a cloud hosting subscription.
 
-   On Windows, `py server.py` also works.
+### Price freshness
 
-6. Open **http://localhost:8080**, sign in with your app password, and click **Test email**. A successful test means SMTP accepted the message; check inbox/spam to confirm arrival.
-7. Enter two different target prices and click **Save & arm both alerts**.
+WatchDog reads **gold in USD per troy ounce** from [Gold API](https://gold-api.com). It checks about every **30 seconds**, or longer if the provider requests caching or encounters errors. All browser tabs share the backend's price request.
 
-No pip installs, npm packages, data API key or email-service subscription are required. Email still follows your provider's account requirements and sending limits. Turn off computer sleep while monitoring. Closing the browser is fine; closing the Python process stops monitoring.
+This is **near-real-time polling**. A brief touch and reversal between checks can be missed. Feed latency and email delivery add delay, and prices may differ from your broker's XAUUSD bid/ask. It is not a tick-by-tick feed or an order execution tool.
 
-## Use it from your phone
+## Quick start
 
-For your **trusted home Wi-Fi only**, set `HOST=0.0.0.0` and `PUBLIC_ORIGIN=http://YOUR-COMPUTER-LAN-IP:8080` in `.env`. Restart the server. On your phone, open that exact address. Allow the computer's firewall to accept port 8080 on your private network only. The computer must remain awake. This local HTTP option is not encrypted; use only on a network you trust.
+### 1. Get your own copy
 
-For access away from home, run one instance on an always-on machine and put it behind an HTTPS reverse proxy or authenticated private tunnel. Set `PUBLIC_ORIGIN` to the exact HTTPS app origin. Protect port 8080 from direct internet access. This package includes a login but is intended for one private user, not a public multi-user service. Production hosts may block SMTP or sleep on free tiers; verify before choosing one. We do not promise permanent free cloud hosting.
-
-**GitHub Pages cannot run the Python monitor or keep SMTP secrets. GitHub Actions schedules are not a real-time monitor.** Storing code in GitHub does not activate alerts. Do not add a workflow that repeatedly polls every few seconds or tries to avoid free-host sleep restrictions.
-
-Optional Docker setup:
-
-```sh
-docker compose up -d --build
-```
-
-The compose setup exposes the app only at localhost. Place your HTTPS proxy on the same host. The named volume preserves state. `.env` provides the email/app credentials and is excluded from the image and Git. There should be only one running instance per data file.
-
-## Alert behaviour
-
-- Target above current price: trigger at or above it. Target below: trigger at or below it. You can put both targets on the same side. Exact equality to the current quote is rejected at arming time to avoid a confusing immediate alert.
-- The first fresh sample at or beyond the target triggers it, even if the feed jumps over the exact price. This also applies on restart; a brief excursion while offline that has already reversed cannot be recovered.
-- Each target sends once and disarms. Click Save to rearm both using the current price as a new baseline. Pause cancels armed and queued alerts; an SMTP transaction already in flight can finish before Pause returns.
-- Target settings, triggered events, retry queue and accepted-email status persist in `data/state.json`. Back up this file if needed. No full price history is collected.
-- Failed email sends retry with increasing delays, up to 10 attempts. A rare crash after SMTP acceptance but before saving, or an ambiguous SMTP timeout, can cause a duplicate on retry. SMTP cannot guarantee exactly-once delivery. Each alert has a stable Message-ID.
-- Quotes more than 120 seconds old, future-dated by more than 10 seconds, or out of order do not trigger. Keep the server clock synchronised. During a market closure or outage, the page reports no fresh quote. The source provides no official market-open flag, so the app does not invent a weekend trading calendar.
-- Credentials remain server-side. Sign-in uses an HttpOnly, SameSite session cookie, Secure on HTTPS. Requests must match the configured origin. Sessions expire after a day and restart invalidates them; monitoring continues regardless of login sessions.
-
-## Get the source
+Clone this repository:
 
 ```sh
 git clone https://github.com/0xtrvkc/watchDog.git
 cd watchDog
 ```
 
-Follow the setup steps above to run the app. Commit `.env.example`, never `.env` or `data/state.json`. Git ignores those private files. Storing this repository on GitHub does not create a hosted monitoring service by itself.
+Alternatively, select **Code → Download ZIP** on GitHub and extract it. Open a terminal in the extracted folder containing `server.py`.
 
-## Verification
+To maintain your own version on GitHub, **fork this repository** and clone your fork instead. Each person runs their own backend with their own settings.
+
+### 2. Create your configuration
+
+Copy `.env.example` to a file named **`.env`** in the same folder as `server.py`.
+
+**Windows PowerShell:**
+
+```powershell
+Copy-Item .env.example .env
+```
+
+**macOS / Linux:**
+
+```sh
+cp .env.example .env
+```
+
+You can also copy and rename the file using your file manager. Make sure it is `.env`, not `.env.txt`.
+
+Open `.env` in a text editor. For Gmail, your settings should look like this:
+
+```dotenv
+APP_PASSWORD=replace-this-with-your-own-random-password
+HOST=127.0.0.1
+PORT=8080
+PUBLIC_ORIGIN=http://localhost:8080
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=your-address@gmail.com
+SMTP_PASSWORD=your-generated-app-password
+MAIL_FROM=your-address@gmail.com
+MAIL_TO=your-address@gmail.com
+```
+
+Replace all password and email placeholders with **your own values**. You can use the same email address for the sender and recipient. `MAIL_TO` can also be a different address you control.
+
+There are two different passwords:
+
+| Setting | Purpose |
+|---|---|
+| `APP_PASSWORD` | Sign in to your WatchDog page. Choose a unique random password of at least 16 characters. |
+| `SMTP_PASSWORD` | Let the backend send email through your provider. For Gmail, use a generated Google App Password. |
+
+For Gmail:
+
+1. Enable **2-Step Verification** on your Google account.
+2. Open [Google App Passwords](https://myaccount.google.com/apppasswords).
+3. Generate an App Password for WatchDog.
+4. Put it in `SMTP_PASSWORD`, removing formatting spaces.
+
+Use the generated App Password, **not your normal Google password**. Google may not offer App Passwords for some account/security settings or managed accounts; see [Google's instructions](https://support.google.com/accounts/answer/185833). If unavailable, use another SMTP provider that supports this authentication method.
+
+Keep `.env` private. It is excluded by `.gitignore` and `.dockerignore`. Do not post it in GitHub issues or upload it to your repository.
+
+### 3. Start the backend
+
+**Windows:**
+
+```powershell
+py server.py
+```
+
+**macOS / Linux:**
+
+```sh
+python3 server.py
+```
+
+`python server.py` also works if that command points to Python 3.12 or newer. No dependency installation is needed.
+
+Leave the terminal running. Open **http://localhost:8080** in your browser and sign in with your `APP_PASSWORD`.
+
+### 4. Test email and set your targets
+
+1. Click **Test email**.
+2. Check your inbox and spam folder for the test message.
+3. Enter two different gold prices.
+4. Click **Save & arm both alerts**.
+
+The backend automatically determines which direction each target needs:
+
+| Target relative to the price when you save | Trigger |
+|---|---|
+| Above the current price | First fresh quote at or above the target |
+| Below the current price | First fresh quote at or below the target |
+
+For example, if the current quote is **$4,150**, targets of **$4,200** and **$4,100** watch for an upward move and a downward move respectively. Both targets can also be above or below the current price.
+
+Each target sends once. To set new targets or rearm the old ones, click **Save & arm both alerts** again. Both targets are rearmed using the current quote as their new baseline. **Pause alerts** cancels armed targets and queued emails.
+
+Close the browser whenever you want; monitoring continues. Closing the backend, turning off the computer, or letting it sleep stops monitoring.
+
+## Access from your phone
+
+### On your home Wi-Fi
+
+1. Find the computer's local IP address, for example `192.168.1.50`.
+2. Update `.env`:
+
+   ```dotenv
+   HOST=0.0.0.0
+   PUBLIC_ORIGIN=http://192.168.1.50:8080
+   ```
+
+3. Restart the backend.
+4. Connect your phone to the same trusted Wi-Fi.
+5. Open **http://192.168.1.50:8080** and sign in.
+
+Use your actual computer IP. Allow inbound port 8080 through the computer's firewall on the **private network only** if necessary. This local HTTP connection is not encrypted; use it only on a network you trust.
+
+`PUBLIC_ORIGIN` must match the address you open, including the scheme and port. After changing it to your LAN address, use that address on your computer too.
+
+### Away from home
+
+Run the backend on an always-on machine behind an **HTTPS reverse proxy or an authenticated private tunnel**. Set `PUBLIC_ORIGIN` to the exact HTTPS address and keep port 8080 protected from direct public access.
+
+The installation is intended for personal use, not as a public multi-user service. Confirm that your host permits background processes, persistent storage, and outbound SMTP. A sleeping free host will not reliably monitor prices.
+
+**GitHub stores the code; it does not activate alerts.** GitHub Pages cannot run this Python backend. This repository includes no GitHub Actions monitoring workflow. Use your own computer or a suitable separate host for monitoring.
+
+## Docker
+
+Configure `.env` first, keeping `PORT=8080`. Then run:
+
+```sh
+docker compose up -d --build
+```
+
+Open **http://localhost:8080**. The Compose setup binds the published port to localhost and overrides `HOST` inside the container so the app is reachable through that port. To access it remotely, put your HTTPS proxy or private tunnel on the same host and configure `PUBLIC_ORIGIN` accordingly.
+
+Useful commands:
+
+```sh
+# View backend output
+docker compose logs -f
+
+# Restart after editing .env
+docker compose up -d --force-recreate
+
+# Stop monitoring, keeping saved state
+docker compose down
+```
+
+The `gold-state` named volume preserves targets and pending alerts. Do not delete the volume unless you intend to reset the saved state. Run only one instance per state file/volume.
+
+## Configuration reference
+
+| Variable | Description |
+|---|---|
+| `APP_PASSWORD` | Unique app login password, at least 16 characters. Replace the example value. |
+| `HOST` | Listening address. Default: `127.0.0.1`. Use `0.0.0.0` only when needed for trusted network access or a protected deployment. |
+| `PORT` | HTTP port. Default: `8080`. Keep `8080` with the provided Compose file. |
+| `PUBLIC_ORIGIN` | Exact address used to open the app, such as `http://localhost:8080` or `https://alerts.example.com`. |
+| `SMTP_HOST` | Your email provider's SMTP hostname. |
+| `SMTP_PORT` | `465` for implicit TLS, or your provider's STARTTLS port, usually `587`. |
+| `SMTP_USER` | SMTP login email address. |
+| `SMTP_PASSWORD` | Provider-approved SMTP password or App Password. |
+| `MAIL_FROM` | Single sender address permitted by your SMTP provider. |
+| `MAIL_TO` | Single recipient address for your alerts. |
+| `DATA_FILE` | Optional saved-state location. Default: `data/state.json` beside `server.py`; Docker uses `/data/state.json`. |
+
+For a different email provider, follow its SMTP host, port, authentication, and sender requirements. This app supports password-based SMTP authentication with TLS; it does not implement OAuth login.
+
+Restart the backend after changing `.env`. Environment variables already supplied by your host take precedence over values in `.env`.
+
+## Troubleshooting
+
+| What you see | What to check |
+|---|---|
+| Python command not found | Install Python 3.12+, then try `py` on Windows or `python3` on macOS/Linux. |
+| App password setup error on startup | Replace the default `APP_PASSWORD` with your own password of at least 16 characters. |
+| Cannot open the page | Check that the backend is running, the address/port is correct, and the firewall allows access where needed. |
+| “Open the app at its configured address” | Open the exact address in `PUBLIC_ORIGIN`, or update that setting and restart. |
+| Save button disabled | Wait for a fresh quote and check that all SMTP/email variables are filled in. |
+| Email test failed | Check SMTP credentials, provider App Password requirements, TLS port, and whether the host blocks outbound SMTP. |
+| Test accepted but no email in inbox | Check spam/junk, sender restrictions, and provider delivery logs. SMTP acceptance does not guarantee inbox placement. |
+| No fresh quote / market closed | The provider is unavailable or its quote is stale. Monitoring backs off and resumes when fresh data returns. |
+| Email pending | Sending failed and a retry is queued. Check SMTP settings; Pause cancels queued messages. |
+| Email failed after 10 attempts | Fix the email configuration, restart if changed, test email, then save the targets again to rearm. |
+| Google App Password stopped working | Google can revoke App Passwords after an account password change. Generate a new one if needed. |
+
+## How monitoring behaves
+
+- A fresh observed quote at or beyond a target triggers it, including a jump over the exact target price. Setting a target exactly equal to the current quote is rejected.
+- Quotes older than 120 seconds, more than 10 seconds in the future, or out of order do not trigger. Keep the server clock synchronised.
+- On restart, armed targets are evaluated against fresh quotes. A temporary crossing while the backend was offline cannot be recovered if the price has already reversed.
+- Targets, queued emails, and accepted-email status persist in the state file. Back it up privately if needed. WatchDog does not store a full price history.
+- Failed email sends retry with increasing delays, up to 10 attempts. Polling/backoff and time spent sending can make checks take longer than 30 seconds.
+- SMTP cannot guarantee exactly-once delivery: an ambiguous timeout or crash after acceptance but before saving can cause a duplicate retry. Alert emails have a stable Message-ID.
+- An email already being sent can finish before Pause returns.
+- Login sessions expire after a day and are invalidated on backend restart. Monitoring does not depend on an active login session.
+
+## Data source and permitted use
+
+The app uses the documented [Gold API price endpoint](https://gold-api.com/docs). Its [integration guidance](https://gold-api.com/llms.txt) asks clients to cache for 30 seconds. WatchDog respects that minimum, longer cache headers, `Retry-After`, and error backoff. It does not scrape chart sites or bypass access controls.
+
+The provider's [published terms](https://gold-api.com/terms) permit app/commercial use and prohibit API abuse. These references were reviewed on **2026-10-01**; terms and availability may change. The provider's data terms are separate from the code licence. This project does not certify the provider's upstream data licensing.
+
+## Development
+
+Run the tests from the repository folder:
 
 ```sh
 python -m unittest discover -s tests -v
 ```
 
-Tests mock email delivery; they never send real messages. They cover upward/downward thresholds, exact hits, skipped prices, independent same-side targets, one-shot behaviour, restart/retry persistence, pause, stale/replayed quotes, invalid targets, caching and API authentication/origin checks.
+Use `py` or `python3` instead if appropriate for your system. Tests mock email sending and never send real messages. They cover target crossings, one-shot behaviour, restart and retry persistence, pause, stale/replayed quotes, invalid inputs, provider caching, and API authentication/origin checks.
 
-## References reviewed
-
-| Reference | Finding / use |
+| File | Purpose |
 |---|---|
-| https://github.com/xdec/gold-price-api | Python API polling and price storage example; GPL-3.0. Its README's old third-party quotas are not treated as current. |
-| https://github.com/lizhuoxi/XAUUSD-Price-Realtime | Older Python 2 quote/email script, using an undocumented quote endpoint with browser-like headers. No licence was visible in the repository listing. |
-| https://github.com/KlodCripta/xauwatch | Shell monitor using Swissquote public quotes and freegoldapi.com historical data. No licence was visible in the repository listing. |
-| https://gold-api.com/docs and https://gold-api.com/llms.txt | Official free price endpoint, USD defaults, response timestamps and 30-second cache guidance. |
-| https://gold-api.com/terms | Official permitted app/commercial use and anti-abuse terms. |
-| https://support.google.com/accounts/answer/185833 | Official Google App Password requirements. |
+| `public/index.html`, `public/style.css`, `public/app.js` | Browser interface |
+| `server.py` | Private API, price monitoring, saved state, and SMTP delivery |
+| `.env.example` | Configuration template without real credentials |
+| `tests/test_alerts.py` | Behaviour and API checks |
+| `Dockerfile`, `compose.yaml` | Optional container setup |
 
-The three repositories informed the review only. **No code was copied from them**. This app is an independent implementation and uses Gold API's documented endpoint instead. API/data rights remain governed by the provider's terms, separate from the code licence.
+When reporting a problem, include your Python version, operating system, and the error message. Remove passwords, cookies, and personal email addresses before sharing logs or screenshots.
+
+## References and licence
+
+These projects informed the initial review:
+
+- [xdec/gold-price-api](https://github.com/xdec/gold-price-api): Python API polling and CSV storage.
+- [lizhuoxi/XAUUSD-Price-Realtime](https://github.com/lizhuoxi/XAUUSD-Price-Realtime): An older quote/email monitoring example.
+- [KlodCripta/xauwatch](https://github.com/KlodCripta/xauwatch): A terminal gold price monitor.
+
+No code was copied from those repositories. WatchDog is an independent implementation.
+
+WatchDog's source is available under the [MIT License](LICENSE). You can use, modify, and run your own copy under that licence; data and email services retain their own terms.
