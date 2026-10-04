@@ -112,3 +112,13 @@ test('Gmail relay restricts recipient, authenticates and deduplicates retries',(
   assert.equal(call({...event,to:'other@example.com'}).ok,false);
   assert.equal(call(event).ok,true);assert.equal(call(event).duplicate,true);assert.equal(sent.length,1);
 });
+
+test('optional Jev route requires the existing session and never changes alert state when unconfigured',async()=>{
+  const env=environment(),base='https://watchdog.example';
+  const request=cookie=>new Request(base+'/api/jev',{method:'POST',headers:{Origin:base,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:JSON.stringify({input:{instruction:'above 4200 and below 4000'}})});
+  assert.equal((await worker.fetch(request(),env)).status,401);
+  const login=await worker.fetch(new Request(base+'/api/login',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({password:env.APP_PASSWORD})}),env);
+  const cookie=login.headers.get('Set-Cookie').split(';')[0],before=JSON.stringify(await snapshot(env));
+  const result=await worker.fetch(request(cookie),env);assert.equal(result.status,503);
+  assert.equal(JSON.stringify(await snapshot(env)),before);assert.ok(!(await result.text()).includes(env.APP_PASSWORD));env.DB.close();
+});

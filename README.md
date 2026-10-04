@@ -331,3 +331,10 @@ The provider's published terms permit app use and prohibit abuse. References wer
 [xdec/gold-price-api](https://github.com/xdec/gold-price-api), [lizhuoxi/XAUUSD-Price-Realtime](https://github.com/lizhuoxi/XAUUSD-Price-Realtime), and [KlodCripta/xauwatch](https://github.com/KlodCripta/xauwatch) informed the initial review; no code was copied from them.
 
 WatchDog is available under the [MIT License](LICENSE). Data, hosting and email services retain their own terms.
+
+
+## Optional Jev upgrade
+
+**Two-target natural-language preview.** Sign in to the existing app, then describe exactly two distinct positive USD target prices and explicit directions, with no other numbers. Commas and up to two decimals are supported. Preview both targets, then fill both existing inputs. The requested directions must agree with the existing side-of-current-price arming rule; conflicting, ambiguous or low-confidence directions are rejected. Filling fields does not arm alerts or send email. Save & arm both alerts remains the only arming action; price crossing, one-shot disarming, scheduler leases and Gmail delivery remain deterministic.
+
+See [JEV.md](JEV.md) for browser-first setup, privacy, input limits, tests and live-evaluation limitations. Existing functionality works without Jev configuration.

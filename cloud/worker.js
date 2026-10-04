@@ -1,3 +1,4 @@
+import {handleJev} from '../jev/worker.mjs';
 const GOLD_API = 'https://api.gold-api.com/price/XAU';
 const encoder = new TextEncoder();
 const defaults = () => ({quote:null,levels:[],pending:[],feedError:'',mailError:'',lastSent:null,
@@ -159,6 +160,10 @@ export default {
         const result=new Response(asset.body,asset);for(const [key,value] of Object.entries(securityHeaders))result.headers.set(key,value);return result;
       }
       if(!env.APP_PASSWORD||env.APP_PASSWORD.length<16||env.APP_PASSWORD.startsWith('replace-'))fail('Configure APP_PASSWORD in Cloudflare secrets first.',503);
+      if(url.pathname==='/api/jev') {
+        if(!await authenticated(request,env))fail('Sign in first.',401);
+        return handleJev(request,{...env,ALLOWED_ORIGINS:url.origin},{authenticated:true});
+      }
       if(request.method==='GET'&&url.pathname==='/api/state') {
         if(!await authenticated(request,env))fail('Sign in to view your alerts.',401);
         const {state}=await load(env.DB);
