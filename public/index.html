@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101112"><title>Gold · Two alerts</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101112"><title>Gold · Two alerts</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script><link rel="stylesheet" href="/jev/style.css">
+</head>
 <body><main>
 <header><span class="mark">AU</span><span>GOLD / USD</span><span class="tag">TWO ALERTS</span></header>
 <section id="login"><h1>Your gold alerts.</h1><p>Enter your app password to manage your two prices.</p><form id="login-form"><label for="password">App password</label><input id="password" type="password" autocomplete="current-password" required minlength="16"><button>Sign in</button></form></section>
 <section id="desk" hidden>
 <div class="quote"><span class="eyebrow">SPOT GOLD · USD / TROY OZ</span><h1 id="price">—</h1><p id="feed">Connecting…</p></div>
+<div id="jevMount"></div>
 <form id="targets"><div class="levels">
 <div class="level"><div class="row"><label for="p1">01 / PRICE</label><span id="s1">Not set</span></div><div class="money"><span>$</span><input id="p1" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" placeholder="Enter price" required></div><p id="d1">—</p></div>
 <div class="level"><div class="row"><label for="p2">02 / PRICE</label><span id="s2">Not set</span></div><div class="money"><span>$</span><input id="p2" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" placeholder="Enter price" required></div><p id="d2">—</p></div>
@@ -14,4 +16,9 @@
 <p class="help" id="monitor-help">One email per target. Save again to rearm. Monitoring continues when you close this page, while the server is running.</p>
 <footer>Source: <a href="https://gold-api.com" target="_blank" rel="noopener">Gold API</a> · <span id="interval">Checks about every 30 seconds.</span><br>Brief touches between checks may be missed. Broker prices may differ.</footer>
 </section><p id="message" role="status" aria-live="polite"></p>
-</main></body></html>
+</main><script src="/jev/config.js"></script>
+<script src="/jev/contract.js"></script>
+<script src="/jev/feature.js"></script>
+<script src="/jev/client.js"></script>
+<script src="/jev/adapter.js"></script>
+</body></html>
